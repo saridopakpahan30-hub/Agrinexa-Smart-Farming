@@ -1,0 +1,38 @@
+rules_version = '2';
+
+// Kepemilikan data ditegakkan di sini, bukan di Flutter. Semua dokumen kebun
+// hidup di bawah users/{uid}, dan {uid} harus sama dengan uid pemilik sesi
+// login. Tidak ada aturan lain yang mengizinkan akses, jadi pengguna A tidak
+// bisa membaca, menulis, atau menghapus data pengguna B — bahkan bila ia
+// mengubah kode aplikasinya sendiri.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Sudah masuk, dan dokumen yang disentuh adalah miliknya sendiri.
+    function milikSendiri(pemilik) {
+      return request.auth != null && request.auth.uid == pemilik;
+    }
+
+    // Dokumen inti: pengaturan usaha tani, preferensi, lokasi, harga catatan.
+    // Field uid di dalamnya harus cocok dengan jalurnya, supaya isi dokumen
+    // tidak bisa dipakai mengklaim milik orang lain.
+    match /users/{pemilik} {
+      allow read: if milikSendiri(pemilik);
+      allow create, update: if milikSendiri(pemilik)
+        && request.resource.data.uid == pemilik;
+      allow delete: if milikSendiri(pemilik);
+
+      // Subkoleksi: kebun (petak), penanaman, keuangan, aktivitas,
+      // riwayatSimulasi, riwayatOptimasi, dan konflik (versi yang kalah saat
+      // dua perangkat berubah bersamaan). Barisnya boleh dihapus dan ditulis
+      // ulang karena sinkronisasi mengirim snapshot lengkap, tapi hanya oleh
+      // pemiliknya.
+      match /{koleksi}/{dokumen} {
+        allow read, write: if milikSendiri(pemilik);
+      }
+    }
+
+    // Sengaja tidak ada aturan untuk jalur lain: Firestore menolak semua
+    // permintaan yang tidak cocok dengan aturan di atas.
+  }
+}
